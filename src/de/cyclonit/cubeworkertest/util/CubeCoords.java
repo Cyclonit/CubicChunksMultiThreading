@@ -1,6 +1,6 @@
 package de.cyclonit.cubeworkertest.util;
 
-public class CubeCoords {
+public class CubeCoords implements GridCoords {
 
     private final int x;
 

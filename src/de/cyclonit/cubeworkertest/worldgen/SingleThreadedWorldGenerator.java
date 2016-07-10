@@ -8,12 +8,18 @@ import de.cyclonit.cubeworkertest.world.ICubeCache;
 import de.cyclonit.cubeworkertest.worldgen.staging.GeneratorStage;
 import de.cyclonit.cubeworkertest.worldgen.staging.GeneratorStageRegistry;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.Set;
 
 public class SingleThreadedWorldGenerator implements ICubeGenerator {
+
+	private static final int DEFAULT_BATCH_SIZE = 50;
+
+	private static final long DEFAULT_BATCH_DURATION = 40;
+
 
 	private ICubeCache cubeCache;
 
@@ -24,10 +30,21 @@ public class SingleThreadedWorldGenerator implements ICubeGenerator {
 	private final GeneratorStageRegistry generatorStageRegistry;
 
 
+	private int batchSize;
+
+	private long batchDuration;
+
+	private final GeneratorReport report;
+
+
 	public SingleThreadedWorldGenerator(GeneratorStageRegistry generatorStageRegistry) {
 		this.queue = new LinkedList<>();
 		this.queuedCubes = new HashSet<>();
 		this.generatorStageRegistry = generatorStageRegistry;
+		this.batchSize = DEFAULT_BATCH_SIZE;
+		this.batchDuration = DEFAULT_BATCH_DURATION;
+
+		this.report = new GeneratorReport(generatorStageRegistry);
 	}
 
 
@@ -67,29 +84,31 @@ public class SingleThreadedWorldGenerator implements ICubeGenerator {
 
 	@Override
 	public void tick() {
-		// TODO: Implement.
+
+		report.startTimer();
+
+		long timeEnd = System.currentTimeMillis() + this.batchDuration;
+		int processed = 0;
+
+		while (processed < this.batchSize && System.currentTimeMillis() < timeEnd) {
+			if (processNext()) {
+				++processed;
+			}
+		}
+
+		report.stopTimer();
 	}
 
 	@Override
 	public void processAll() {
 
+		report.startTimer();
+
 		while (!this.queue.isEmpty()) {
-
-			// Get the next cube. If it does not exist, continue.
-			Cube cube = this.cubeCache.getCube(this.queue.poll());
-			if (cube == null) {
-				continue;
-			}
-
-			// Process the cube.
-			processCube(cube);
-
-			// Advance its stage and requeue if necessary.
-			advanceStage(cube);
-			if (!cube.hasReachedTargetStage()) {
-				this.queueCube(cube);
-			}
+			processNext();
 		}
+
+		report.stopTimer();
 	}
 
 
@@ -103,11 +122,42 @@ public class SingleThreadedWorldGenerator implements ICubeGenerator {
 		}
 	}
 
+	private boolean processNext() {
+
+		// Get the next cube.
+		CubeCoords coords = this.queue.poll();
+		this.queuedCubes.remove(coords);
+		Cube cube = this.cubeCache.getCube(coords);
+
+		// If it does not exist, continue.
+		if (cube == null) {
+			this.report.addSkipped();
+			return false;
+		}
+
+		// Process the cube.
+		GeneratorStage previousStage = cube.getCurrentStage();
+		processCube(cube);
+
+		// Advance its stage and requeue if necessary.
+		advanceStage(cube);
+		if (!cube.hasReachedTargetStage()) {
+			this.queueCube(cube);
+		}
+
+		this.report.addProcessed(previousStage);
+		return true;
+	}
+
 	private static void processCube(Cube cube) {
 		try {
-			Thread.sleep((long) (Math.random() * 10L));
+			Thread.sleep((long) (Math.random() * 5L));
 		} catch (InterruptedException e) {
 		}
+	}
+
+	public GeneratorReport getReport() {
+		return this.report;
 	}
 
 	private static void advanceStage(Cube cube) {

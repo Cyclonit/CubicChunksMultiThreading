@@ -1,6 +1,7 @@
 package de.cyclonit.cubeworkertest;
 
 import de.cyclonit.cubeworkertest.util.CubeCoords;
+import de.cyclonit.cubeworkertest.worldgen.MultiThreadedWorldGenerator;
 import de.cyclonit.cubeworkertest.worldgen.SingleThreadedWorldGenerator;
 import de.cyclonit.cubeworkertest.worldgen.staging.GeneratorStage;
 import de.cyclonit.cubeworkertest.worldgen.staging.GeneratorStageRegistry;
@@ -13,35 +14,60 @@ public class Main {
 
 	    GeneratorStage alpha = new GeneratorStage("alpha");
 	    stageRegistry.addStage(alpha);
-
 	    GeneratorStage beta = new GeneratorStage("beta");
 	    stageRegistry.addStage(beta);
+	    GeneratorStage gamma = new GeneratorStage("gamma");
+	    stageRegistry.addStage(gamma);
 
-	    SingleThreadedWorldGenerator worldGenerator = new SingleThreadedWorldGenerator(stageRegistry);
+	    SingleThreadedWorldGenerator singleThreadedWorldGenerator = new SingleThreadedWorldGenerator(stageRegistry);
+	    ServerCubeProvider singleThreadedCubeProvider = new ServerCubeProvider(singleThreadedWorldGenerator);
 
-	    ServerCubeProvider cubeProvider = new ServerCubeProvider(worldGenerator);
+	    MultiThreadedWorldGenerator multiThreadedWorldGenerator = new MultiThreadedWorldGenerator(stageRegistry);
+	    ServerCubeProvider multiThreadedCubeProvider = new ServerCubeProvider(multiThreadedWorldGenerator);
 
-	    long timeStart = System.currentTimeMillis();
-
-	    int radius = 10;
+	    int radius = 5;
 		for (int x = -radius; x <= radius; ++x) {
 			for (int y = -radius; y <= radius; ++y) {
 				for (int z = -radius; z <= radius; ++z) {
-					cubeProvider.provideCube(new CubeCoords(x, y, z));
+					singleThreadedCubeProvider.provideCube(new CubeCoords(x, y, z));
+					multiThreadedCubeProvider.provideCube(new CubeCoords(x, y, z));
 				}
 			}
 		}
 
-	    long timeDiff = System.currentTimeMillis() - timeStart;
-	    System.out.println("Providing: " + timeDiff);
+	    long timeStart, timeDiff = 0;
 
-
+		// Single threaded
 	    timeStart = System.currentTimeMillis();
-
-	    worldGenerator.processAll();
-
+	    singleThreadedWorldGenerator.processAll();
 	    timeDiff = System.currentTimeMillis() - timeStart;
-	    System.out.println("Generating: " + timeDiff);
 
+	    System.out.println("Single Threaded: " + timeDiff + "ms");
+	    singleThreadedWorldGenerator.getReport().reportTotal();
+
+
+	    // Multi threaded
+	    multiThreadedWorldGenerator.setWorkerCount(2);
+	    timeStart = System.currentTimeMillis();
+	    multiThreadedWorldGenerator.processAll();
+	    timeDiff = System.currentTimeMillis() - timeStart;
+
+	    System.out.println("Multi Threaded: " + timeDiff + "ms");
+	    multiThreadedWorldGenerator.report();
+
+	    for (int x = -radius; x <= radius; ++x) {
+		    for (int y = -radius; y <= radius; ++y) {
+			    for (int z = -radius; z <= radius; ++z) {
+				    if (singleThreadedCubeProvider.getCube(new CubeCoords(x, y, z)).getCurrentStage() .getName() != "gamma") {
+					    System.out.println("WRONG!");
+				    }
+				    if (multiThreadedCubeProvider.getCube(new CubeCoords(x, y, z)).getCurrentStage() .getName() != "gamma") {
+					    System.out.println("WRONG! 2");
+				    }
+			    }
+		    }
+	    }
+
+	    return;
     }
 }

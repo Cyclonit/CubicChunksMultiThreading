@@ -27,12 +27,20 @@ public class GeneratorStageRegistry {
         }
     }
 
+    public GeneratorStage getStage(int ordinal) {
+        return this.stages.get(ordinal);
+    }
+
     public GeneratorStage getFirstStage() {
         return this.stages.get(0);
     }
 
     public GeneratorStage getLastStage() {
         return this.stages.get(this.stages.size() - 1);
+    }
+
+    public int size() {
+        return this.stages.size();
     }
 
 }
