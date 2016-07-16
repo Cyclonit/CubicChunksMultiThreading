@@ -3,10 +3,13 @@ package de.cyclonit.cubeworkertest.worldgen.concurrency;
 import de.cyclonit.cubeworkertest.world.Cube;
 import de.cyclonit.cubeworkertest.world.ICubeCache;
 import de.cyclonit.cubeworkertest.worldgen.GeneratorReport;
+import de.cyclonit.cubeworkertest.worldgen.IGeneratorPipeline;
 import de.cyclonit.cubeworkertest.worldgen.staging.GeneratorStage;
 import de.cyclonit.cubeworkertest.worldgen.staging.GeneratorStageRegistry;
 
-public class GeneratorWorker extends ColumnWorker implements Runnable {
+public class GeneratorWorker extends ConcurrentColumnWorker {
+
+	private final IGeneratorPipeline generatorPipeline;
 
 	private final ICubeCache cubeCache;
 
@@ -15,8 +18,9 @@ public class GeneratorWorker extends ColumnWorker implements Runnable {
 	private GeneratorReport report;
 
 
-	public GeneratorWorker(ICubeCache cubeCache, ColumnTaskManager<GeneratorTask> taskManager, GeneratorStageRegistry generatorStageRegistry) {
+	public GeneratorWorker(IGeneratorPipeline generatorPipeline, ICubeCache cubeCache, ColumnTaskManager<GeneratorTask> taskManager, GeneratorStageRegistry generatorStageRegistry) {
 		super(taskManager.getColumnLockManager());
+		this.generatorPipeline = generatorPipeline;
 		this.cubeCache = cubeCache;
 		this.taskManager = taskManager;
 		this.taskManager.register(this);
@@ -25,27 +29,27 @@ public class GeneratorWorker extends ColumnWorker implements Runnable {
 	}
 
 
+	// -------------------------------------- Superclass: ConcurrentColumnWorker ---------------------------------------
+
 	@Override
-	public void run() {
+	public void tick() {
 
-		GeneratorTask task;
+		GeneratorTask task = this.taskManager.poll(this);
 
-		while (!this.taskManager.isShutdown() && !this.shouldShutdown()) {
-
-			task = this.taskManager.poll(this);
-
-			if (task != null) {
-				this.process(task);
-			} else {
-				this.report.addSkipped();
-			}
-
+		if (task != null) {
+			this.process(task);
+		} else {
+			this.report.addSkipped();
 		}
-
-		this.taskManager.unregister(this);
-		this.isShutdown = true;
 	}
 
+	@Override
+	public void onShutdown() {
+		this.taskManager.unregister(this);
+	}
+
+
+	// ---------------------------------------------------- Helper -----------------------------------------------------
 
 	private boolean process(GeneratorTask task) {
 
@@ -64,7 +68,7 @@ public class GeneratorWorker extends ColumnWorker implements Runnable {
 		// Advance the cube's stage and requeue if necessary.
 		advanceStage(cube);
 		if (!cube.hasReachedStage(task.targetStage)) {
-			this.taskManager.add(task);
+			this.generatorPipeline.generateCube(cube);
 		}
 		this.clearAssignment();
 

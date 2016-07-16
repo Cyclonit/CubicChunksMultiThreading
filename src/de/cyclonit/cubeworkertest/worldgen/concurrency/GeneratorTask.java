@@ -2,9 +2,13 @@ package de.cyclonit.cubeworkertest.worldgen.concurrency;
 
 import de.cyclonit.cubeworkertest.util.CubeCoords;
 import de.cyclonit.cubeworkertest.util.GridCoords;
+import de.cyclonit.cubeworkertest.worldgen.concurrency.columnAssignment.IColumnTask;
 import de.cyclonit.cubeworkertest.worldgen.staging.GeneratorStage;
 
-public class GeneratorTask extends ColumnTask {
+public class GeneratorTask implements IColumnTask {
+
+	public static final int DEFAULT_LOCK_RADIUS = 2;
+
 
 	public final CubeCoords coords;
 
@@ -17,11 +21,16 @@ public class GeneratorTask extends ColumnTask {
 	}
 
 
-	// -------------------------------------------- Superclass: ColumnTask ---------------------------------------------
+	// -------------------------------------------- Interface: IColumnTask ---------------------------------------------
 
 	@Override
 	public GridCoords getGridCoords() {
 		return this.coords;
+	}
+
+	@Override
+	public int getLockRadius() {
+		return DEFAULT_LOCK_RADIUS;
 	}
 
 

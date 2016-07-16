@@ -1,33 +1,27 @@
 package de.cyclonit.cubeworkertest.worldgen;
 
-import de.cyclonit.cubeworkertest.IPartialCubeProvider;
 import de.cyclonit.cubeworkertest.util.CubeCoords;
-import de.cyclonit.cubeworkertest.world.Column;
 import de.cyclonit.cubeworkertest.world.Cube;
-import de.cyclonit.cubeworkertest.world.ICubeCache;
+import de.cyclonit.cubeworkertest.worldgen.dependency.DependentCube;
+import de.cyclonit.cubeworkertest.worldgen.dependency.ICubeDependency;
 import de.cyclonit.cubeworkertest.worldgen.staging.GeneratorStage;
 import de.cyclonit.cubeworkertest.worldgen.staging.GeneratorStageRegistry;
 
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.Set;
 
-public class SingleThreadedWorldGenerator implements ICubeGenerator {
+public class SingleThreadedGeneratorPipeline extends AbstractGeneratorPipeline {
 
 	private static final int DEFAULT_BATCH_SIZE = 50;
 
 	private static final long DEFAULT_BATCH_DURATION = 40;
 
 
-	private ICubeCache cubeCache;
-
 	private final Queue<CubeCoords> queue;
 
 	private final Set<CubeCoords> queuedCubes;
-
-	private final GeneratorStageRegistry generatorStageRegistry;
 
 
 	private int batchSize;
@@ -37,10 +31,10 @@ public class SingleThreadedWorldGenerator implements ICubeGenerator {
 	private final GeneratorReport report;
 
 
-	public SingleThreadedWorldGenerator(GeneratorStageRegistry generatorStageRegistry) {
+	public SingleThreadedGeneratorPipeline(GeneratorStageRegistry generatorStageRegistry) {
+		super(generatorStageRegistry);
 		this.queue = new LinkedList<>();
 		this.queuedCubes = new HashSet<>();
-		this.generatorStageRegistry = generatorStageRegistry;
 		this.batchSize = DEFAULT_BATCH_SIZE;
 		this.batchDuration = DEFAULT_BATCH_DURATION;
 
@@ -48,29 +42,40 @@ public class SingleThreadedWorldGenerator implements ICubeGenerator {
 	}
 
 
-	// ------------------------------------------- Interface: ICubeGenerator -------------------------------------------
-
-	@Override
-	public void initialize(IPartialCubeProvider cubeProvider) {
-		this.cubeCache = cubeProvider.getCubeCache();
-	}
-
-	@Override
-	public void generateCube(Cube cube) {
-		this.generateCube(cube, this.generatorStageRegistry.getLastStage());
-	}
+	// ------------------------------------------- Interface: IGeneratorPipeline -------------------------------------------
 
 	@Override
 	public void generateCube(Cube cube, GeneratorStage targetStage) {
 
-		// Ensure a current stage is set.
-		if (cube.getCurrentStage() == null) {
-			cube.setCurrentStage(this.generatorStageRegistry.getFirstStage());
+		// Ensure the proper target stage is set.
+		if (cube.getTargetStage().precedes(targetStage)) {
+			cube.setTargetStage(targetStage);
 		}
 
-		// Ensure the proper target stage is set.
-		if (cube.getTargetStage() == null || cube.getTargetStage().precedes(targetStage)) {
-			cube.setTargetStage(targetStage);
+		// If the cube has reached the target stage, don't do anything.
+		if (cube.hasReachedTargetStage()) {
+			return;
+		}
+
+		// If the cube's current stage has requirements, hand it to the DependencyManager.
+		ICubeDependency cubeDependency = cube.getCurrentStage().getCubeDependency(cube);
+		if (cubeDependency != null) {
+			DependentCube dependentCube = new DependentCube(cube, cubeDependency, this);
+			this.dependentCubeManager.registerDependentCube(dependentCube);
+		}
+
+		// Otherwise, queue the cube for processing in tick().
+		else {
+			this.queueCube(cube);
+		}
+	}
+
+	@Override
+	public void resumeCube(Cube cube) {
+
+		// If the cube has reached the target stage, don't do anything.
+		if (cube.hasReachedTargetStage()) {
+			return;
 		}
 
 		// Queue the cube for processing in tick().
@@ -78,16 +83,11 @@ public class SingleThreadedWorldGenerator implements ICubeGenerator {
 	}
 
 	@Override
-	public void generateColumn(Column column) {
-		// TODO: Implement.
-	}
-
-	@Override
-	public void tick() {
+	public void tick(long duration) {
 
 		report.startTimer();
 
-		long timeEnd = System.currentTimeMillis() + this.batchDuration;
+		long timeEnd = System.currentTimeMillis() + duration;
 		int processed = 0;
 
 		while (processed < this.batchSize && System.currentTimeMillis() < timeEnd) {
@@ -105,10 +105,25 @@ public class SingleThreadedWorldGenerator implements ICubeGenerator {
 		report.startTimer();
 
 		while (!this.queue.isEmpty()) {
-			processNext();
+			this.processNext();
 		}
 
 		report.stopTimer();
+	}
+
+	@Override
+	public void reportTotal() {
+		this.report.reportTotal();
+	}
+
+	@Override
+	public void reportRecent() {
+		this.report.reportRecent();
+	}
+
+	@Override
+	public void resetRecentReport() {
+		this.report.resetRecentReport();
 	}
 
 
@@ -154,10 +169,6 @@ public class SingleThreadedWorldGenerator implements ICubeGenerator {
 			Thread.sleep((long) (Math.random() * 5L));
 		} catch (InterruptedException e) {
 		}
-	}
-
-	public GeneratorReport getReport() {
-		return this.report;
 	}
 
 	private static void advanceStage(Cube cube) {

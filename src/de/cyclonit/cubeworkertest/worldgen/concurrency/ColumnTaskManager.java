@@ -1,18 +1,21 @@
 package de.cyclonit.cubeworkertest.worldgen.concurrency;
 
+import de.cyclonit.cubeworkertest.worldgen.concurrency.columnAssignment.ColumnLockManager;
+import de.cyclonit.cubeworkertest.worldgen.concurrency.columnAssignment.IColumnTask;
+
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
-public class ColumnTaskManager<T extends ColumnTask> {
+public class ColumnTaskManager<T extends IColumnTask> {
 
 	private final ColumnLockManager lockManager;
 
 	private final List<T> taskQueue;
 
-	private final Set<ColumnWorker> workers;
+	private final Set<ConcurrentColumnWorker> workers;
 
 	// Polling
 
@@ -64,7 +67,7 @@ public class ColumnTaskManager<T extends ColumnTask> {
 
 	// ----------------------------------------------- Worker Management -----------------------------------------------
 
-	public boolean register(ColumnWorker worker) {
+	public boolean register(ConcurrentColumnWorker worker) {
 		synchronized (this.shutdownMutex) {
 			if (!this.shutdown) {
 				synchronized (this.pauseMutex) {
@@ -78,9 +81,9 @@ public class ColumnTaskManager<T extends ColumnTask> {
 		}
 	}
 
-	public void unregister(ColumnWorker worker) {
+	public void unregister(ConcurrentColumnWorker worker) {
 		synchronized (this.shutdownMutex) {
-			worker.clearAssignment();
+			worker.destroy();
 			if (this.workers.remove(worker)) {
 				this.shutdownMutex.notifyAll();
 			}
@@ -199,7 +202,7 @@ public class ColumnTaskManager<T extends ColumnTask> {
 		}
 	}
 
-	public T poll(ColumnWorker worker) {
+	public T poll(ConcurrentColumnWorker worker) {
 
 		synchronized (this.mutex) {
 
@@ -249,14 +252,20 @@ public class ColumnTaskManager<T extends ColumnTask> {
 	// ------------------------------------------------- Shutting down -------------------------------------------------
 
 	public void shutdown() {
-		this.shutdown = true;
+		synchronized (this.shutdownMutex) {
+			this.shutdown = true;
 
-		// Unpause all workers.
-		synchronized (this.mutex) {
-			this.mutex.notifyAll();
-		}
-		synchronized (this.pauseMutex) {
-			this.pauseMutex.notifyAll();
+			for (ConcurrentColumnWorker worker : this.workers) {
+				worker.shutdown();
+			}
+
+			// Unpause all workers.
+			synchronized (this.mutex) {
+				this.mutex.notifyAll();
+			}
+			synchronized (this.pauseMutex) {
+				this.pauseMutex.notifyAll();
+			}
 		}
 	}
 

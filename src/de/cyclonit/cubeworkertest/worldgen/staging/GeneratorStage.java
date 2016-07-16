@@ -1,6 +1,9 @@
 package de.cyclonit.cubeworkertest.worldgen.staging;
 
-public class GeneratorStage {
+import de.cyclonit.cubeworkertest.world.Cube;
+import de.cyclonit.cubeworkertest.worldgen.dependency.ICubeDependency;
+
+public class GeneratorStage implements ICubeDependencyProvider {
 
     private final String name;
 
@@ -37,6 +40,16 @@ public class GeneratorStage {
     public GeneratorStage getNextStage() {
         return this.nextStage;
     }
+
+
+    // -------------------------------------- Interface: ICubeDependencyProvider ---------------------------------------
+
+    public ICubeDependency getCubeDependency(Cube cube) {
+        return null;
+    }
+
+
+    // ---------------------------------------------------- Helper -----------------------------------------------------
 
     public boolean precedes(GeneratorStage targetStage) {
         return this.ordinal < targetStage.ordinal;

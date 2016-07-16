@@ -6,20 +6,24 @@ import de.cyclonit.cubeworkertest.world.Column;
 import de.cyclonit.cubeworkertest.world.Cube;
 import de.cyclonit.cubeworkertest.world.CubeCache;
 import de.cyclonit.cubeworkertest.world.ICubeCache;
-import de.cyclonit.cubeworkertest.worldgen.ICubeGenerator;
+import de.cyclonit.cubeworkertest.worldgen.IGeneratorPipeline;
+import de.cyclonit.cubeworkertest.worldgen.dependency.DependencyManager;
 import de.cyclonit.cubeworkertest.worldgen.staging.GeneratorStage;
 
 public class ServerCubeProvider implements IPartialCubeProvider {
 
 	private final ICubeCache cubeCache;
 
-	private final ICubeGenerator cubeGenerator;
+	private final IGeneratorPipeline generatorPipeline;
+
+	private final DependencyManager dependencyManager;
 
 
-	public ServerCubeProvider(ICubeGenerator cubeGenerator) {
+	public ServerCubeProvider(IGeneratorPipeline generatorPipeline) {
 		this.cubeCache = new CubeCache();
-		this.cubeGenerator = cubeGenerator;
-		this.cubeGenerator.initialize(this);
+		this.generatorPipeline = generatorPipeline;
+		this.dependencyManager = new DependencyManager(this);
+		this.generatorPipeline.initialize(this.cubeCache, this.dependencyManager);
 	}
 
 
@@ -63,6 +67,7 @@ public class ServerCubeProvider implements IPartialCubeProvider {
 		// If the cube does not yet exist, create it.
 		if (cube == null) {
 			cube = this.createCube(coords);
+			this.generatorPipeline.initializeCube(cube);
 		}
 
 		// If the cube is live, return it.
@@ -71,7 +76,7 @@ public class ServerCubeProvider implements IPartialCubeProvider {
 		}
 
 		// Since the cube was requested and has not yet reached the last stage, generate it.
-		this.cubeGenerator.generateCube(cube);
+		this.generatorPipeline.generateCube(cube);
 
 		// This method must not return cubes that have not reached the final stage, thus return null.
 		return null;
@@ -95,27 +100,14 @@ public class ServerCubeProvider implements IPartialCubeProvider {
 	// ---------------------------------------- Interface: IPartialCubeProvider ----------------------------------------
 
 	@Override
+	public Cube getRawCube(CubeCoords coords) {
+		return this.cubeCache.getCube(coords);
+	}
+
+	@Override
 	public Cube getCube(CubeCoords coords, GeneratorStage generatorStage) {
-
-		// Get the cube's column.
-		ColumnCoords columnCoords = ColumnCoords.fromCubeCoords(coords);
-		Column column = this.cubeCache.getColumn(columnCoords);
-
-		// If the column does not yet exist, create it.
-		if (column == null) {
-			column = this.createColumn(columnCoords);
-		}
-
-		// Get the cube from the column.
-		Cube cube = column.getCube(coords.getCubeY());
-
-		// If the cube does not yet exist, create it.
-		if (cube == null) {
-			cube = this.createCube(coords);
-		}
-
-		// If the cube has reached the requested stage, return it, otherwise return null.
-		if (cube.hasReachedStage(generatorStage)) {
+		Cube cube = this.cubeCache.getCube(coords);
+		if (cube != null && cube.hasReachedStage(generatorStage)) {
 			return cube;
 		} else {
 			return null;
@@ -140,6 +132,7 @@ public class ServerCubeProvider implements IPartialCubeProvider {
 		// If the cube does not yet exist, create it.
 		if (cube == null) {
 			cube = this.createCube(coords);
+			this.generatorPipeline.initializeCube(cube);
 		}
 
 		// If the cube has reached the requested stage, return it.
@@ -148,12 +141,16 @@ public class ServerCubeProvider implements IPartialCubeProvider {
 		}
 
 		// Generate the cube up to the requested stage.
-		this.cubeGenerator.generateCube(cube, generatorStage);
+		this.generatorPipeline.generateCube(cube, generatorStage);
 
 		// Because the cube has not yet reached the requested stage, return null.
 		return null;
 	}
 
+	@Override
+	public void tick(long duration) {
+		this.generatorPipeline.tick(duration);
+	}
 
 	// ---------------------------------------------------- Helpers ----------------------------------------------------
 
